@@ -973,9 +973,15 @@ static int isWalkable(const char *cell)
 {
     // You might refine this as needed
     if (strcmp(cell, ".") == 0) return 1;
-    if (strcmp(cell, " ") == 0) return 1;
     if (strcmp(cell, "T") == 0) return 1;
     if (strcmp(cell, "E") == 0) return 1;
+    if (strcmp(cell, "╬") == 0) return 1;
+    if (strcmp(cell, "═") == 0) return 1;
+    if (strcmp(cell, "║") == 0) return 1;
+    if (strcmp(cell, "╔") == 0) return 1;
+    if (strcmp(cell, "╗") == 0) return 1;
+    if (strcmp(cell, "╝") == 0) return 1;
+    if (strcmp(cell, "╚") == 0) return 1;
     // corridor glyphs? Doors? It's up to you:
     // if (strcmp(cell, "╬") == 0) return 1; // maybe
 
@@ -1024,10 +1030,14 @@ void gameLoopNcurses()
     cbreak();
     keypad(stdscr, TRUE);
 
+    // We'll store what's underneath the player:
+    // For the first time, assume it's floor "." (or whatever you like)
+    char prevTile[4] = ".";
+
     // Hide the cursor
     curs_set(0);
 
-    // We placed the player with '@' already. Draw once
+    // Draw once
     drawBigMapNcurses();
 
     while (gameRunning) {
@@ -1048,39 +1058,49 @@ void gameLoopNcurses()
 
         // Bounds check
         if (newX < 0 || newX >= BIG_SIZE || newY < 0 || newY >= BIG_SIZE) {
-            // Out of range => ignore
             continue;
         }
 
         // Check if walkable
         if (!isWalkable(bigMap[newY][newX])) {
-            // Not walkable => ignore
             continue;
         }
 
-        // It's walkable => move the player
-        // Remove old player glyph
-        setCell(playerX, playerY, "."); // or whatever floor was
-        playerX = newX;
-        playerY = newY;
+        // ---------------------------------------
+        // 1) Restore the old tile
+        //    (The tile that was under the player, saved in prevTile)
+        // ---------------------------------------
+        setCell(playerX, playerY, prevTile);
 
-        // If there's treasure (T) or exit (E), handle it
-        if (strcmp(bigMap[playerY][playerX], "T") == 0) {
+        // ---------------------------------------
+        // 2) Figure out what tile is currently at newX,newY
+        //    Save it to prevTile for the next iteration
+        // ---------------------------------------
+        strcpy(prevTile, bigMap[newY][newX]);
+        
+        // If that tile is "T" or "E", we might handle it differently:
+        if (strcmp(prevTile, "T") == 0) {
             hasTreasure = 1;
-            // Replace the 'T' with '.' floor
-            setCell(playerX, playerY, ".");
-            // Show a message in a corner
+            // The treasure is "picked up," so the tile effectively becomes ".".
+            strcpy(prevTile, ".");
             mvprintw(BIG_SIZE+1, 0, "You got the treasure!");
         }
-        else if (strcmp(bigMap[playerY][playerX], "E") == 0) {
+        else if (strcmp(prevTile, "E") == 0) {
             if (!hasTreasure) {
-                mvprintw(BIG_SIZE+2, 0, "You found the exit... but you have no treasure!");
+                mvprintw(BIG_SIZE+2, 0, "You found the exit... but no treasure!");
             } else {
-                // We have the treasure, so we truly escaped
                 mvprintw(BIG_SIZE+2, 0, "You escaped the dungeon!");
                 gameRunning = 0;
             }
+            // In either case, you can treat it as "." once stepped on:
+            strcpy(prevTile, ".");
         }
+
+        // ---------------------------------------
+        // 3) Move the player
+        // ---------------------------------------
+        playerX = newX;
+        playerY = newY;
 
         // Place the new player glyph
         setCell(playerX, playerY, "@");
