@@ -1087,13 +1087,15 @@ void gameLoopNcurses()
         }
         else if (strcmp(prevTile, "E") == 0) {
             if (!hasTreasure) {
-                mvprintw(BIG_SIZE+2, 0, "You found the exit... but no treasure!");
+                mvprintw(BIG_SIZE+1, 0, "You found the exit... but no treasure!");
             } else {
-                mvprintw(BIG_SIZE+2, 0, "You escaped the dungeon!");
+                mvprintw(BIG_SIZE+1, 0, "You escaped the dungeon!");
                 gameRunning = 0;
             }
-            // In either case, you can treat it as "." once stepped on:
-            strcpy(prevTile, ".");
+        } else {
+            // If it's not "T" or "E", it's just a regular walkable tile.
+            // We can clear the message line.
+            mvprintw(BIG_SIZE+1, 0, "                                      ");
         }
 
         // ---------------------------------------
