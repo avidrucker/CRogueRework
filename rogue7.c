@@ -158,7 +158,7 @@ static void recursiveBacktracking(int x, int y, int *room_count, int max_rooms)
  */
 void generateMaze()
 {
-    srand((unsigned)time(NULL));
+    srand(0); // (unsigned)time(NULL)
     int room_count = 0;
     int max_rooms = 6 + rand() % 4; // between 6 and 9
     // printf("Generating up to %d rooms...\n", max_rooms);
@@ -739,7 +739,7 @@ void findFarthestRoom(int startGX, int startGY, int *outGX, int *outGY)
         // Check neighbors
         // Right
         if (gx < SIZE-1 && horizontal_corridors[gy][gx] && rooms[gy][gx+1]) {
-            if (dist[gy][gx+1] > d + 1) {
+            if (dist[gy][gx+1] == -1) {
                 dist[gy][gx+1] = d + 1;
                 queue[back][0] = gx+1;
                 queue[back][1] = gy;
@@ -748,7 +748,7 @@ void findFarthestRoom(int startGX, int startGY, int *outGX, int *outGY)
         }
         // Left
         if (gx > 0 && horizontal_corridors[gy][gx-1] && rooms[gy][gx-1]) {
-            if (dist[gy][gx-1] > d + 1) {
+            if (dist[gy][gx-1] == -1) {
                 dist[gy][gx-1] = d + 1;
                 queue[back][0] = gx-1;
                 queue[back][1] = gy;
@@ -757,7 +757,7 @@ void findFarthestRoom(int startGX, int startGY, int *outGX, int *outGY)
         }
         // Down
         if (gy < SIZE-1 && vertical_corridors[gy][gx] && rooms[gy+1][gx]) {
-            if (dist[gy+1][gx] > d + 1) {
+            if (dist[gy+1][gx] == -1) {
                 dist[gy+1][gx] = d + 1;
                 queue[back][0] = gx;
                 queue[back][1] = gy+1;
@@ -766,7 +766,7 @@ void findFarthestRoom(int startGX, int startGY, int *outGX, int *outGY)
         }
         // Up
         if (gy > 0 && vertical_corridors[gy-1][gx] && rooms[gy-1][gx]) {
-            if (dist[gy-1][gx] > d + 1) {
+            if (dist[gy-1][gx] == -1) {
                 dist[gy-1][gx] = d + 1;
                 queue[back][0] = gx;
                 queue[back][1] = gy-1;
@@ -790,6 +790,8 @@ void findFarthestRoom(int startGX, int startGY, int *outGX, int *outGY)
         }
     }
 
+    // printf("Farthest room is (%d,%d) with dist %d\n", bestGX, bestGY, bestDist);
+
     *outGX = bestGX;
     *outGY = bestGY;
 }
@@ -810,6 +812,8 @@ void placeExitFarthestFromPlayer()
             }
         }
     }
+    
+    // printf("Player is in room (%d,%d)\n", playerRoomGX, playerRoomGY);
 
     int farGX, farGY;
     findFarthestRoom(playerRoomGX, playerRoomGY, &farGX, &farGY);
