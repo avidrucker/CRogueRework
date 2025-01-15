@@ -4,8 +4,9 @@
 # Allow only .c files
 !*.c
 
-# Allow the readme
+# Allow the readme and todos
 !*README.md
+!*TODOS.md
 
 # Allow .gitignore itself
 !.gitignore
