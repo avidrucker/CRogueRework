@@ -160,7 +160,7 @@ void generateMaze()
 {
     srand((unsigned)time(NULL)); // seed for reproducibility
     int room_count = 0;
-    int max_rooms = 6 + rand() % 4; // between 6 and 9
+    int max_rooms = 9;
     // printf("Generating up to %d rooms...\n", max_rooms);
     int startX    = rand() % SIZE;
     int startY    = rand() % SIZE;
@@ -348,31 +348,12 @@ void carveCorridor(int x1, int y1, int x2, int y2, int isHoriz)
 
     // If start == end, just place a single glyph
     if (x1 == x2 && y1 == y2) {
-        setCell(x1, y1, isHoriz ? "═" : "║");
+        setCell(x1, y1, "▒");
         return;
     }
 
-    // (1) Place a "start tile" based on direction
-    if (isHoriz) {
-        // Overall corridor direction is west→east
-        if (doXFirst) {
-            setCell(x1, y1, "═"); // horizontal first
-        } else {
-            // We move vertically first
-            if (y2 > y1) setCell(x1, y1, "╗");
-            else         setCell(x1, y1, "╝");
-        }
-    } else {
-        // Overall corridor direction is north→south
-        if (doXFirst) {
-            // We move horizontally first, so corner up or down
-            if (x1 > x2) setCell(x1, y1, "╝");
-            else         setCell(x1, y1, "╚");
-        } else {
-            // We move vertically first
-            setCell(x1, y1, "║");
-        }
-    }
+    // (1) Place a "start tile"
+    setCell(x1, y1, "▒");
 
     // (2) Phase 1: Move along one axis until we match x2 or y2
     int dx = 0, dy = 0;
@@ -380,13 +361,13 @@ void carveCorridor(int x1, int y1, int x2, int y2, int isHoriz)
         dx = (x2 > x1) ? +1 : -1;
         while (x1 != x2) {
             x1 += dx;
-            setCell(x1, y1, "═");
+            setCell(x1, y1, "▒");
         }
     } else {
         dy = (y2 > y1) ? +1 : -1;
         while (y1 != y2) {
             y1 += dy;
-            setCell(x1, y1, "║");
+            setCell(x1, y1, "▒");
         }
     }
 
@@ -408,18 +389,7 @@ void carveCorridor(int x1, int y1, int x2, int y2, int isHoriz)
         }
 
         // Place a pivot corner glyph at the current pivot (x1,y1)
-        if (newDx != 0 || newDy != 0) {
-            // A small mapping from oldDx,oldDy => newDx,newDy to a corner glyph
-            if (oldDx > 0 && newDy < 0)      setCell(x1, y1, "╝");
-            else if (oldDx > 0 && newDy > 0) setCell(x1, y1, "╗");
-            else if (oldDx < 0 && newDy < 0) setCell(x1, y1, "3"); // custom
-            else if (oldDx < 0 && newDy > 0) setCell(x1, y1, "╔");
-            else if (oldDy > 0 && newDx > 0) setCell(x1, y1, "╚");
-            else if (oldDy > 0 && newDx < 0) setCell(x1, y1, "╝");
-            else if (oldDy < 0 && newDx > 0) setCell(x1, y1, "╔");
-            else if (oldDy < 0 && newDx < 0) setCell(x1, y1, "8"); // custom
-            else                             setCell(x1, y1, "?");
-        }
+        setCell(x1, y1, "▒");
 
         // Phase2
         dx = newDx;
@@ -427,35 +397,14 @@ void carveCorridor(int x1, int y1, int x2, int y2, int isHoriz)
         while (x1 != x2 || y1 != y2) {
             x1 += dx;
             y1 += dy;
-            setCell(x1, y1, (dx != 0) ? "═" : "║");
+            setCell(x1, y1, "▒");
         }
     }
 
     // (4) Place the "end tile"
     // We see if we ended horizontally or vertically for the last step
     int endDx = dx, endDy = dy;
-    setCell(x1, y1, "?"); // put something first, then refine
-
-    if (isHoriz) {
-        if (endDy == 0) {
-            // purely horizontal end
-            setCell(x1, y1, "═");
-        } else {
-            // corner up or down
-            if (endDy > 0) setCell(x1, y1, "╚");
-            else           setCell(x1, y1, "╔");
-        }
-    } else {
-        if (endDy == 0) {
-            // purely horizontal corner in a vertical corridor
-            if (endDx > 0) setCell(x1, y1, "╗");
-            else           setCell(x1, y1, "╔");
-        } else {
-            // purely vertical end
-            if (endDy > 0) setCell(x1, y1, "║");
-            else           setCell(x1, y1, "K"); // or "║" etc.
-        }
-    }
+    setCell(x1, y1, "▒");
 }
 
 /*
@@ -590,6 +539,210 @@ int countCorridorsForCell(int gx, int gy)
         count++;
 
     return count;
+}
+
+// Now we define a new function that draws corridor junction
+// in the subgrid for "removed" cells
+void drawMissingRoomJunctions()
+{
+    for (int gy = 0; gy < SIZE; gy++) {
+        for (int gx = 0; gx < SIZE; gx++) {
+            // If the corridor adjacency says that cell was connected
+            // but the 'room' is removed => place a junction tile
+            if (!tiledRooms[gy][gx].exists) {
+                // See if we have corridors leading in or out:
+                int ccount = countCorridorsForCell(gx, gy);
+                if (ccount > 0) {
+                    int subgridX = gx * SUBGRID_SIZE;
+                    int subgridY = gy * SUBGRID_SIZE;
+
+                    // Middle of the subgrid
+                    int centerX = subgridX + SUBGRID_SIZE/2;
+                    int centerY = subgridY + SUBGRID_SIZE/2;
+
+                    // Let's place a "▒"
+                    // Something that indicates a pass-thru node.
+                    setCell(centerX, centerY, "▒");
+                }
+            }
+        }
+    }
+}
+
+/**
+ * connectNodesWithCorridors:
+ * For each 3x3 cell that is NOT a room (rooms[gy][gx]==0) but has corridor adjacency,
+ * carve corridors from its “center tile” to the neighbor’s door or neighbor’s center.
+ * This ensures the “junction” is actually connected in the bigMap,
+ * *with the rule* that we always start from the left or top cell
+ * and end at the right or bottom cell.
+ */
+void connectNodesWithCorridors()
+{
+    for (int gy = 0; gy < SIZE; gy++) {
+        for (int gx = 0; gx < SIZE; gx++) {
+
+            // If we do not have a room but do have adjacency => it's a node
+            if (rooms[gy][gx] == 0) {
+                int ccount = countCorridorsForCell(gx, gy);
+                if (ccount > 0) {
+                    // Node’s center tile
+                    int nodeCenterX = gx * SUBGRID_SIZE + (SUBGRID_SIZE / 2);
+                    int nodeCenterY = gy * SUBGRID_SIZE + (SUBGRID_SIZE / 2);
+
+                    // --------------------------------------------------
+                    // RIGHT NEIGHBOR
+                    // --------------------------------------------------
+                    if (gx < SIZE - 1 && horizontal_corridors[gy][gx]) {
+                        // There's a corridor to the cell on the right: (gx+1, gy)
+                        // Always treat the left cell (this node) as start, right as end
+                        // so (startX < endX) for a horizontal corridor.
+                        if (rooms[gy][gx + 1] == 1) {
+                            // node → real room
+                            TiledRoom* r = &tiledRooms[gy][gx + 1];
+                            if (r->exists) {
+                                int doorX = r->x;  // left wall of that room
+                                int doorY = randomWallCoordinate(r->y, r->height);
+
+                                // place door
+                                strcpy(bigMap[doorY][doorX], "╬"); //
+
+                                // carve from nodeCenterX+1 to doorX-1
+                                carveCorridor(nodeCenterX + 1, nodeCenterY,
+                                              doorX - 1, doorY,
+                                              /*isHoriz=*/1);
+                            }
+                        } else {
+                            // node → node
+                            int neighborCenterX = (gx + 1) * SUBGRID_SIZE + (SUBGRID_SIZE / 2);
+                            int neighborCenterY = gy * SUBGRID_SIZE + (SUBGRID_SIZE / 2);
+
+                            // ensure we treat the left X as start, right X as end
+                            int startX = (nodeCenterX < neighborCenterX ? nodeCenterX : neighborCenterX);
+                            int endX   = (nodeCenterX < neighborCenterX ? neighborCenterX : nodeCenterX);
+
+                            carveCorridor(startX + 1, nodeCenterY,
+                                          endX - 1, neighborCenterY,
+                                          /*isHoriz=*/1);
+                        }
+                    }
+
+                    // --------------------------------------------------
+                    // LEFT NEIGHBOR
+                    // --------------------------------------------------
+                    if (gx > 0 && horizontal_corridors[gy][gx - 1]) {
+                        // There's a corridor to the cell on the left: (gx-1, gy)
+                        // Always treat the left cell as start, right cell as end.
+                        if (rooms[gy][gx - 1] == 1) {
+                            // room → node or node → room
+                            // But in terms of X, the smaller X is the start.
+                            TiledRoom* r = &tiledRooms[gy][gx - 1];
+                            if (r->exists) {
+                                int doorX = r->x + r->width - 1;  // right wall of that room
+                                int doorY = randomWallCoordinate(r->y, r->height);
+
+                                strcpy(bigMap[doorY][doorX], "╬");
+
+                                // We want the smaller X to be start, so:
+                                int startX = (doorX < nodeCenterX) ? doorX : nodeCenterX;
+                                int endX   = (doorX < nodeCenterX) ? nodeCenterX : doorX;
+
+                                carveCorridor(startX + 1, doorY,
+                                              endX - 1, nodeCenterY,
+                                              /*isHoriz=*/1);
+                            }
+                        } else {
+                            // node → node horizontally
+                            int neighborCenterX = (gx - 1) * SUBGRID_SIZE + (SUBGRID_SIZE / 2);
+                            int neighborCenterY = gy * SUBGRID_SIZE + (SUBGRID_SIZE / 2);
+
+                            // smaller X is start, bigger X is end
+                            int startX = (neighborCenterX < nodeCenterX ? neighborCenterX : nodeCenterX);
+                            int endX   = (neighborCenterX < nodeCenterX ? nodeCenterX : neighborCenterX);
+
+                            carveCorridor(startX + 1, neighborCenterY,
+                                          endX - 1, nodeCenterY,
+                                          /*isHoriz=*/1);
+                        }
+                    }
+
+                    // --------------------------------------------------
+                    // DOWN NEIGHBOR
+                    // --------------------------------------------------
+                    if (gy < SIZE - 1 && vertical_corridors[gy][gx]) {
+                        // There's a corridor to the cell below: (gx, gy+1)
+                        // Always treat the top cell as start, bottom as end
+                        if (rooms[gy + 1][gx] == 1) {
+                            // node → real room
+                            TiledRoom* r = &tiledRooms[gy + 1][gx];
+                            if (r->exists) {
+                                int doorX = r->x + (r->width / 2);
+                                int doorY = r->y;  // top wall
+
+                                strcpy(bigMap[doorY][doorX], "╬");
+
+                                // smaller Y is start, bigger Y is end
+                                int startY = (nodeCenterY < doorY ? nodeCenterY : doorY);
+                                int endY   = (nodeCenterY < doorY ? doorY : nodeCenterY);
+
+                                carveCorridor(nodeCenterX, startY + 1,
+                                              doorX, endY - 1,
+                                              /*isHoriz=*/0);
+                            }
+                        } else {
+                            // node → node vertically
+                            int neighborCenterX = gx * SUBGRID_SIZE + (SUBGRID_SIZE / 2);
+                            int neighborCenterY = (gy + 1)*SUBGRID_SIZE + (SUBGRID_SIZE / 2);
+
+                            // top is start, bottom is end
+                            int startY = (nodeCenterY < neighborCenterY ? nodeCenterY : neighborCenterY);
+                            int endY   = (nodeCenterY < neighborCenterY ? neighborCenterY : nodeCenterY);
+
+                            carveCorridor(nodeCenterX, startY + 1,
+                                          neighborCenterX, endY - 1,
+                                          /*isHoriz=*/0);
+                        }
+                    }
+
+                    // --------------------------------------------------
+                    // UP NEIGHBOR
+                    // --------------------------------------------------
+                    if (gy > 0 && vertical_corridors[gy - 1][gx]) {
+                        // There's a corridor to the cell above: (gx, gy-1)
+                        // Always treat the top cell as start, bottom as end
+                        if (rooms[gy - 1][gx] == 1) {
+                            TiledRoom* r = &tiledRooms[gy - 1][gx];
+                            if (r->exists) {
+                                int doorX = r->x + (r->width / 2);
+                                int doorY = r->y + r->height - 1; // bottom wall
+
+                                strcpy(bigMap[doorY][doorX], "╬");
+
+                                // top is start, bottom is end
+                                int startY = (doorY < nodeCenterY ? doorY : nodeCenterY);
+                                int endY   = (doorY < nodeCenterY ? nodeCenterY : doorY);
+
+                                carveCorridor(doorX, startY + 1,
+                                              nodeCenterX, endY - 1,
+                                              /*isHoriz=*/0);
+                            }
+                        } else {
+                            // node → node
+                            int neighborCenterX = gx * SUBGRID_SIZE + (SUBGRID_SIZE / 2);
+                            int neighborCenterY = (gy - 1)*SUBGRID_SIZE + (SUBGRID_SIZE / 2);
+
+                            int startY = (neighborCenterY < nodeCenterY ? neighborCenterY : nodeCenterY);
+                            int endY   = (neighborCenterY < nodeCenterY ? nodeCenterY : neighborCenterY);
+
+                            carveCorridor(nodeCenterX, startY + 1,
+                                          neighborCenterX, endY - 1,
+                                          /*isHoriz=*/0);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /**
@@ -826,62 +979,6 @@ void placeExitFarthestFromPlayer()
     setCell(ex, ey, "E");
 }
 
-/*
- * ------------------------------------------------------------
- * Printing the 30x30 bigMap
- * ------------------------------------------------------------
- *
- * The printTile function applies special logic to “stretch” certain box-drawing
- * characters horizontally, or to combine them with door glyphs, etc.
- */
-
-/**
- * printTile: Responsible for printing one tile from bigMap[y][x].
- * Optionally, it looks at nextCell to decide if we want to “stretch” the glyph.
- */
-void printTile(const char *cell, const char *nextCell)
-{
-    // Many special cases for wide corridor/door glyphs
-    if (strcmp(cell, "═") == 0) {
-        printf("══");
-    }
-    else if (strcmp(cell, "╚") == 0) {
-        printf("╚═");
-    }
-    else if (strcmp(cell, "╔") == 0 && strcmp(nextCell, " ") != 0) { 
-        // Possibly a door adjacency
-        printf("╔═");
-    }
-    else if (strcmp(cell, "╬") == 0 && 
-            (strcmp(nextCell, "═") == 0 ||
-             strcmp(nextCell, "╗") == 0 ||
-             strcmp(nextCell, "╝") == 0)) {
-        // "╬═" for a door continuing horizontally
-        printf("╬═");
-    }
-    else if (strcmp(cell, "─") == 0) {
-        printf("──");
-    }
-    else if (strcmp(cell, "┌") == 0 && 
-            (strcmp(nextCell, "─") == 0 || strcmp(nextCell, "╬") == 0)) {
-        printf("┌─");
-    }
-    else if (strcmp(cell, "└") == 0 && 
-            (strcmp(nextCell, "─") == 0 || strcmp(nextCell, "╬") == 0)) {
-        printf("└─");
-    }
-    else if (strcmp(cell, "╬") == 0 &&
-            ((strcmp(nextCell, "─") == 0) ||
-             (strcmp(nextCell, "┐") == 0) ||
-             (strcmp(nextCell, "┘") == 0))) {
-        printf("╬─");
-    }
-    else {
-        // Default: print cell + a space
-        printf("%s ", cell);
-    }
-}
-
 /**
  * ncursesPrintTile: Responsible for printing one tile and optionally
  * "stretching" it (like "══") if needed.
@@ -897,27 +994,15 @@ static int ncursesPrintTile(int row, int col, const char *cell, const char *next
 {
     // Same logic as your printTile() but using mvaddstr.
     // We'll return how many columns we used.
-
-    if (strcmp(cell, "═") == 0) {
-        // This "wall" is 2 columns wide
-        mvaddstr(row, col, "══");
-        return 2;
-    }
-    else if (strcmp(cell, "╚") == 0) {
-        // "╚═" is also 2 columns wide
-        mvaddstr(row, col, "╚═");
-        return 2;
-    }
-    else if (strcmp(cell, "╔") == 0) {
-        mvaddstr(row, col, "╔═");
-        return 2;
-    }
-    else if (strcmp(cell, "╬") == 0 &&
-             (strcmp(nextCell, "═") == 0 ||
-              strcmp(nextCell, "╗") == 0 ||
-              strcmp(nextCell, "╝") == 0))
+    if (strcmp(cell, "╬") == 0 &&
+             (strcmp(nextCell, "▒") == 0)) // "╬▒"
     {
-        mvaddstr(row, col, "╬═");
+        mvaddstr(row, col, "╬▒");
+        return 2;
+    }
+    else if (strcmp(cell, "▒") == 0 && (strcmp(nextCell, "▒") == 0 || 
+                                        strcmp(nextCell, "╬") == 0)) {
+        mvaddstr(row, col, "▒▒");
         return 2;
     }
     else if (strcmp(cell, "─") == 0) {
@@ -952,22 +1037,6 @@ static int ncursesPrintTile(int row, int col, const char *cell, const char *next
     }
 }
 
-/**
- * printBigMap: Loops over the 30x30 bigMap and prints each cell using printTile().
- */
-void printBigMap()
-{
-    for (int y = 0; y < BIG_SIZE; y++) {
-        for (int x = 0; x < BIG_SIZE; x++) {
-            // Look ahead to the next cell in row to decide if we do any wide glyph
-            // Guard against x+1 out of bounds by using a conditional.
-            const char *nextCell = (x + 1 < BIG_SIZE) ? bigMap[y][x+1] : " ";
-            printTile(bigMap[y][x], nextCell);
-        }
-        printf("\n");
-    }
-}
-
 /////////////////////////////////////////////
 static int isWalkable(const char *cell)
 {
@@ -976,12 +1045,7 @@ static int isWalkable(const char *cell)
     if (strcmp(cell, "T") == 0) return 1;
     if (strcmp(cell, "E") == 0) return 1;
     if (strcmp(cell, "╬") == 0) return 1;
-    if (strcmp(cell, "═") == 0) return 1;
-    if (strcmp(cell, "║") == 0) return 1;
-    if (strcmp(cell, "╔") == 0) return 1;
-    if (strcmp(cell, "╗") == 0) return 1;
-    if (strcmp(cell, "╝") == 0) return 1;
-    if (strcmp(cell, "╚") == 0) return 1;
+    if (strcmp(cell, "▒") == 0) return 1;
     // corridor glyphs? Doors? It's up to you:
     // if (strcmp(cell, "╬") == 0) return 1; // maybe
 
@@ -1115,6 +1179,45 @@ void gameLoopNcurses()
     endwin();
 }
 
+// removing rooms means that there will still be a point there
+// at which corridors can pass through, but there will be
+// no walls, floor, or doors - just corridor
+// Note: only rooms with more than 1 door will be removed
+void removeSomeRooms()
+{
+    // Remove a random number between 0 and 3 (inclusive)
+    int roomsToRemove = rand() % 4;
+
+    while (roomsToRemove > 0)
+    {
+        for (int gy = 0; gy < SIZE; gy++)
+        {
+            for (int gx = 0; gx < SIZE; gx++)
+            {
+                // Only attempt removal if there is currently a room here.
+                if (rooms[gy][gx])
+                {
+                    // Check how many doors/corridors connect to this room
+                    int ccount = countCorridorsForCell(gx, gy);
+
+                    // Only remove if the room has 2 or more doors,
+                    // and randomly decide to remove it (like your existing code).
+                    if (ccount >= 2 && (rand() % 2 == 0))
+                    {
+                        rooms[gy][gx] = 0;
+                        roomsToRemove--;
+
+                        if (roomsToRemove == 0)
+                            break;
+                    }
+                }
+            }
+            if (roomsToRemove == 0)
+                break;
+        }
+    }
+}
+
 /*
  * ------------------------------------------------------------
  * main: Demonstration
@@ -1124,12 +1227,15 @@ int main(void)
 {
     // 1) Generate the 3x3 "macro" dungeon layout
     generateMaze();
-    // Optionally: printMaze();
+    // printMaze();
+    removeSomeRooms();
 
     // 2) Prepare and build the 30x30 "tiled" map
     clearBigMap();
     positionRoomsInQuadrants();
     drawAllRooms();
+    drawMissingRoomJunctions();
+    connectNodesWithCorridors();
     placeDoorsForCorridors();
 
     // 3) Place player, treasure, exit
