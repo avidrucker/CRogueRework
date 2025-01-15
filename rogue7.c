@@ -158,7 +158,7 @@ static void recursiveBacktracking(int x, int y, int *room_count, int max_rooms)
  */
 void generateMaze()
 {
-    srand(0); // (unsigned)time(NULL)
+    srand((unsigned)time(NULL)); // seed for reproducibility
     int room_count = 0;
     int max_rooms = 6 + rand() % 4; // between 6 and 9
     // printf("Generating up to %d rooms...\n", max_rooms);
