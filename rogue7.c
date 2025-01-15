@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
+#include <curses.h>   // or <ncurses.h> depending on your platform
+#include <unistd.h>   // for usleep() if you want a small delay
+#include <locale.h>
 
 /*
  * ------------------------------------------------------------
@@ -15,10 +18,16 @@
 #define MIN_ROOM_DIM 5
 #define MAX_ROOM_DIM 9
 
+int playerX, playerY;       // player's position in bigMap
+int hasTreasure = 0;        // 0 = not yet, 1 = got treasure
+int gameRunning = 1;        // 1 = running, 0 = user quit or reached exit
+
 // These store which 3x3 cells actually have rooms (1) and which corridors connect them
 int rooms[SIZE][SIZE] = {0};
 int horizontal_corridors[SIZE][SIZE] = {0};
 int vertical_corridors[SIZE][SIZE]   = {0};
+
+int dist[SIZE][SIZE]; // store BFS distances
 
 // The big 30x30 tile map; each cell is a short string for box-drawing or filler
 char bigMap[BIG_SIZE][BIG_SIZE][4];
@@ -555,6 +564,266 @@ void placeDoorsForCorridors()
 
 /*
  * ------------------------------------------------------------
+ * Player, Treasure, and Exit Placement
+ * ------------------------------------------------------------
+ */
+/**
+ * countCorridorsForCell: returns how many corridor connections 
+ * this cell (gx, gy) has (both horizontal & vertical).
+ */
+int countCorridorsForCell(int gx, int gy)
+{
+    int count = 0;
+
+    // If there's a horizontal corridor from (gx,gy) to (gx+1,gy)
+    if (gx < SIZE - 1 && horizontal_corridors[gy][gx])
+        count++;
+    // If there's a horizontal corridor from (gx-1,gy) to (gx,gy)
+    if (gx > 0 && horizontal_corridors[gy][gx - 1])
+        count++;
+
+    // If there's a vertical corridor from (gx,gy) to (gx,gy+1)
+    if (gy < SIZE - 1 && vertical_corridors[gy][gx])
+        count++;
+    // If there's a vertical corridor from (gx,gy-1) to (gx,gy)
+    if (gy > 0 && vertical_corridors[gy - 1][gx])
+        count++;
+
+    return count;
+}
+
+/**
+ * placePlayerInEdgeRoom: Finds all rooms with exactly 1 corridor connection,
+ * picks one at random, and places the player in the center of that TiledRoom 
+ * (or anywhere within).
+ */
+void placePlayerInEdgeRoom()
+{
+    // Collect all candidate rooms
+    int candidates[SIZE*SIZE][2];
+    int ccount = 0;
+
+    for (int gy = 0; gy < SIZE; gy++) {
+        for (int gx = 0; gx < SIZE; gx++) {
+            if (!tiledRooms[gy][gx].exists) continue;
+
+            int corridorCount = countCorridorsForCell(gx, gy);
+            if (corridorCount == 1) {
+                candidates[ccount][0] = gx;
+                candidates[ccount][1] = gy;
+                ccount++;
+            }
+        }
+    }
+
+    // If we found none, fallback: place in any existing room
+    if (ccount == 0) {
+        for (int gy = 0; gy < SIZE && ccount==0; gy++) {
+            for (int gx = 0; gx < SIZE && ccount==0; gx++) {
+                if (tiledRooms[gy][gx].exists) {
+                    candidates[0][0] = gx;
+                    candidates[0][1] = gy;
+                    ccount = 1;
+                }
+            }
+        }
+    }
+
+    // Random pick among the candidates
+    int pick = rand() % ccount;
+    int gx = candidates[pick][0];
+    int gy = candidates[pick][1];
+
+    // Place player near the center of that TiledRoom
+    TiledRoom *r = &tiledRooms[gy][gx];
+
+    int px = r->x + r->width / 2;
+    int py = r->y + r->height / 2;
+
+    // Make sure it's on top of a "." or some floor
+    // For simplicity, we assume interior was "."
+
+    playerX = px;
+    playerY = py;
+
+    // Mark the bigMap with "@" for the player
+    setCell(playerX, playerY, "@");
+}
+
+/**
+ * placeTreasureInRandomRoom: picks a random TiledRoom (not the player's),
+ * places 'T' in a random interior tile. 
+ */
+void placeTreasureInRandomRoom()
+{
+    // Collect all rooms except the one the player is in
+    // First, find which room the player is in:
+    int playerRoomGX = -1, playerRoomGY = -1;
+
+    // Identify which TiledRoom contains the player's (playerX,playerY)
+    for (int gy = 0; gy < SIZE; gy++) {
+        for (int gx = 0; gx < SIZE; gx++) {
+            if (!tiledRooms[gy][gx].exists) continue;
+            TiledRoom *r = &tiledRooms[gy][gx];
+            if (playerX >= r->x && playerX < r->x + r->width &&
+                playerY >= r->y && playerY < r->y + r->height) {
+                playerRoomGX = gx;
+                playerRoomGY = gy;
+                break;
+            }
+        }
+    }
+
+    // Gather all other rooms
+    int candidates[SIZE*SIZE][2];
+    int ccount = 0;
+    for (int gy = 0; gy < SIZE; gy++) {
+        for (int gx = 0; gx < SIZE; gx++) {
+            if (!tiledRooms[gy][gx].exists) continue;
+            if (gx == playerRoomGX && gy == playerRoomGY) continue;
+            candidates[ccount][0] = gx;
+            candidates[ccount][1] = gy;
+            ccount++;
+        }
+    }
+
+    if (ccount == 0) {
+        // Edge case: all rooms are the same or no other rooms
+        // Just skip placing treasure
+        return;
+    }
+
+    // Pick one at random
+    int pick = rand() % ccount;
+    int gx = candidates[pick][0];
+    int gy = candidates[pick][1];
+    TiledRoom *r = &tiledRooms[gy][gx];
+
+    // Place T somewhere in that room’s interior
+    int tx = r->x + 1 + rand() % (r->width - 2);
+    int ty = r->y + 1 + rand() % (r->height - 2);
+
+    setCell(tx, ty, "T");
+}
+
+/**
+ * findFarthestRoom: BFS from (startGX, startGY) across the 3x3 adjacency,
+ * returns the (gx,gy) with the greatest distance that is a room (exists=1).
+ */
+void findFarthestRoom(int startGX, int startGY, int *outGX, int *outGY)
+{
+    // Initialize dist
+    for (int y=0; y<SIZE; y++) {
+        for (int x=0; x<SIZE; x++) {
+            dist[y][x] = -1; // unvisited
+        }
+    }
+    dist[startGY][startGX] = 0;
+
+    // BFS queue
+    int queue[SIZE*SIZE][2];
+    int front = 0, back = 0;
+
+    // Enqueue start
+    queue[back][0] = startGX;
+    queue[back][1] = startGY;
+    back++;
+
+    // BFS
+    while (front < back) {
+        int gx = queue[front][0];
+        int gy = queue[front][1];
+        front++;
+        int d = dist[gy][gx];
+
+        // Check neighbors
+        // Right
+        if (gx < SIZE-1 && horizontal_corridors[gy][gx] && rooms[gy][gx+1]) {
+            if (dist[gy][gx+1] > d + 1) {
+                dist[gy][gx+1] = d + 1;
+                queue[back][0] = gx+1;
+                queue[back][1] = gy;
+                back++;
+            }
+        }
+        // Left
+        if (gx > 0 && horizontal_corridors[gy][gx-1] && rooms[gy][gx-1]) {
+            if (dist[gy][gx-1] > d + 1) {
+                dist[gy][gx-1] = d + 1;
+                queue[back][0] = gx-1;
+                queue[back][1] = gy;
+                back++;
+            }
+        }
+        // Down
+        if (gy < SIZE-1 && vertical_corridors[gy][gx] && rooms[gy+1][gx]) {
+            if (dist[gy+1][gx] > d + 1) {
+                dist[gy+1][gx] = d + 1;
+                queue[back][0] = gx;
+                queue[back][1] = gy+1;
+                back++;
+            }
+        }
+        // Up
+        if (gy > 0 && vertical_corridors[gy-1][gx] && rooms[gy-1][gx]) {
+            if (dist[gy-1][gx] > d + 1) {
+                dist[gy-1][gx] = d + 1;
+                queue[back][0] = gx;
+                queue[back][1] = gy-1;
+                back++;
+            }
+        }
+    }
+
+    // Now find the cell with the largest dist that is a room
+    int bestDist = -1;
+    int bestGX = startGX, bestGY = startGY;
+    for (int gy=0; gy<SIZE; gy++) {
+        for (int gx=0; gx<SIZE; gx++) {
+            if (rooms[gy][gx] && dist[gy][gx] != -1) {
+                if (dist[gy][gx] > bestDist) {
+                    bestDist = dist[gy][gx];
+                    bestGX = gx;
+                    bestGY = gy;
+                }
+            }
+        }
+    }
+
+    *outGX = bestGX;
+    *outGY = bestGY;
+}
+
+void placeExitFarthestFromPlayer()
+{
+    // Which 3x3 room is the player in?
+    int playerRoomGX=-1, playerRoomGY=-1;
+    for (int gy=0; gy<SIZE; gy++) {
+        for (int gx=0; gx<SIZE; gx++) {
+            if (!tiledRooms[gy][gx].exists) continue;
+            TiledRoom *r = &tiledRooms[gy][gx];
+            if (playerX >= r->x && playerX < r->x + r->width &&
+                playerY >= r->y && playerY < r->y + r->height) {
+                playerRoomGX = gx;
+                playerRoomGY = gy;
+                break;
+            }
+        }
+    }
+
+    int farGX, farGY;
+    findFarthestRoom(playerRoomGX, playerRoomGY, &farGX, &farGY);
+    TiledRoom *farRoom = &tiledRooms[farGY][farGX];
+
+    // Place "E" in a random interior tile
+    int ex = farRoom->x + 1 + rand() % (farRoom->width - 2);
+    int ey = farRoom->y + 1 + rand() % (farRoom->height - 2);
+
+    setCell(ex, ey, "E");
+}
+
+/*
+ * ------------------------------------------------------------
  * Printing the 30x30 bigMap
  * ------------------------------------------------------------
  *
@@ -610,6 +879,76 @@ void printTile(const char *cell, const char *nextCell)
 }
 
 /**
+ * ncursesPrintTile: Responsible for printing one tile and optionally
+ * "stretching" it (like "══") if needed.
+ *
+ * @param row     The ncurses row
+ * @param col     The ncurses column to start printing
+ * @param cell    The current tile's string (e.g. "═", "┌", ".")
+ * @param nextCell The next tile in the row (to decide if we want to merge horizontally)
+ *
+ * @return The number of columns printed. Typically 1 or 2.
+ */
+static int ncursesPrintTile(int row, int col, const char *cell, const char *nextCell)
+{
+    // Same logic as your printTile() but using mvaddstr.
+    // We'll return how many columns we used.
+
+    if (strcmp(cell, "═") == 0) {
+        // This "wall" is 2 columns wide
+        mvaddstr(row, col, "══");
+        return 2;
+    }
+    else if (strcmp(cell, "╚") == 0) {
+        // "╚═" is also 2 columns wide
+        mvaddstr(row, col, "╚═");
+        return 2;
+    }
+    else if (strcmp(cell, "╔") == 0) {
+        mvaddstr(row, col, "╔═");
+        return 2;
+    }
+    else if (strcmp(cell, "╬") == 0 &&
+             (strcmp(nextCell, "═") == 0 ||
+              strcmp(nextCell, "╗") == 0 ||
+              strcmp(nextCell, "╝") == 0))
+    {
+        mvaddstr(row, col, "╬═");
+        return 2;
+    }
+    else if (strcmp(cell, "─") == 0) {
+        mvaddstr(row, col, "──");
+        return 2;
+    }
+    else if (strcmp(cell, "┌") == 0 &&
+             (strcmp(nextCell, "─") == 0 || strcmp(nextCell, "╬") == 0))
+    {
+        mvaddstr(row, col, "┌─");
+        return 2;
+    }
+    else if (strcmp(cell, "└") == 0 &&
+             (strcmp(nextCell, "─") == 0 || strcmp(nextCell, "╬") == 0))
+    {
+        mvaddstr(row, col, "└─");
+        return 2;
+    }
+    else if (strcmp(cell, "╬") == 0 &&
+             (strcmp(nextCell, "─") == 0 ||
+              strcmp(nextCell, "┐") == 0 ||
+              strcmp(nextCell, "┘") == 0))
+    {
+        mvaddstr(row, col, "╬─");
+        return 2;
+    }
+    else {
+        // Default: print cell as a single character (plus any spacing)
+        // e.g. ".", " ", "T", "E", "@", etc.
+        mvaddstr(row, col, cell);
+        return 1;
+    }
+}
+
+/**
  * printBigMap: Loops over the 30x30 bigMap and prints each cell using printTile().
  */
 void printBigMap()
@@ -625,6 +964,131 @@ void printBigMap()
     }
 }
 
+/////////////////////////////////////////////
+static int isWalkable(const char *cell)
+{
+    // You might refine this as needed
+    if (strcmp(cell, ".") == 0) return 1;
+    if (strcmp(cell, " ") == 0) return 1;
+    if (strcmp(cell, "T") == 0) return 1;
+    if (strcmp(cell, "E") == 0) return 1;
+    // corridor glyphs? Doors? It's up to you:
+    // if (strcmp(cell, "╬") == 0) return 1; // maybe
+
+    return 0;
+}
+
+/**
+ * drawBigMapNcurses: Clear screen, then draw the bigMap in ncurses.
+ */
+void drawBigMapNcurses()
+{
+    for (int y = 0; y < BIG_SIZE; y++) {
+
+        int cursorX = 0;
+
+        for (int x = 0; x < BIG_SIZE; x++) {
+            // Print the entire string stored in bigMap[y][x]
+            // mvaddstr(y, x * 2, bigMap[y][x]);
+
+            // Look ahead to the next cell for "stretch" logic
+            const char *nextCell = (x + 1 < BIG_SIZE) ? bigMap[y][x+1] : " ";
+
+            // Print the current tile in ncurses
+            // This returns how many columns we actually used.
+            int usedCols = ncursesPrintTile(y, cursorX, bigMap[y][x], nextCell);
+
+            // Advance cursorX by however many columns we used
+            cursorX += 2;
+        }
+    }
+    refresh();
+}
+
+/**
+ * gameLoopNcurses: 
+ *  - Waits for WASD or Q
+ *  - Moves player if next cell is walkable
+ *  - If we step on 'T', show message, remove 'T'
+ *  - If we step on 'E', show message, end game
+ */
+void gameLoopNcurses()
+{
+    setlocale(LC_ALL, "");
+    initscr();
+    noecho();
+    cbreak();
+    keypad(stdscr, TRUE);
+
+    // Hide the cursor
+    curs_set(0);
+
+    // We placed the player with '@' already. Draw once
+    drawBigMapNcurses();
+
+    while (gameRunning) {
+        int ch = getch();
+        if (ch == 'q' || ch == 'Q') {
+            // Quit
+            gameRunning = 0;
+            break;
+        }
+
+        int newX = playerX;
+        int newY = playerY;
+
+        if (ch == 'w' || ch == 'W') newY--;
+        if (ch == 's' || ch == 'S') newY++;
+        if (ch == 'a' || ch == 'A') newX--;
+        if (ch == 'd' || ch == 'D') newX++;
+
+        // Bounds check
+        if (newX < 0 || newX >= BIG_SIZE || newY < 0 || newY >= BIG_SIZE) {
+            // Out of range => ignore
+            continue;
+        }
+
+        // Check if walkable
+        if (!isWalkable(bigMap[newY][newX])) {
+            // Not walkable => ignore
+            continue;
+        }
+
+        // It's walkable => move the player
+        // Remove old player glyph
+        setCell(playerX, playerY, "."); // or whatever floor was
+        playerX = newX;
+        playerY = newY;
+
+        // If there's treasure (T) or exit (E), handle it
+        if (strcmp(bigMap[playerY][playerX], "T") == 0) {
+            hasTreasure = 1;
+            // Replace the 'T' with '.' floor
+            setCell(playerX, playerY, ".");
+            // Show a message in a corner
+            mvprintw(BIG_SIZE+1, 0, "You got the treasure!");
+        }
+        else if (strcmp(bigMap[playerY][playerX], "E") == 0) {
+            if (!hasTreasure) {
+                mvprintw(BIG_SIZE+2, 0, "You found the exit... but you have no treasure!");
+            } else {
+                // We have the treasure, so we truly escaped
+                mvprintw(BIG_SIZE+2, 0, "You escaped the dungeon!");
+                gameRunning = 0;
+            }
+        }
+
+        // Place the new player glyph
+        setCell(playerX, playerY, "@");
+
+        // Redraw
+        drawBigMapNcurses();
+    }
+
+    // End curses mode
+    endwin();
+}
+
 /*
  * ------------------------------------------------------------
  * main: Demonstration
@@ -633,8 +1097,8 @@ void printBigMap()
 int main(void)
 {
     // 1) Generate the 3x3 "macro" dungeon layout
-    generateMaze();  
-    // printMaze();  // (Optional) debug output of 3x3 layout
+    generateMaze();
+    // Optionally: printMaze();
 
     // 2) Prepare and build the 30x30 "tiled" map
     clearBigMap();
@@ -642,8 +1106,21 @@ int main(void)
     drawAllRooms();
     placeDoorsForCorridors();
 
-    // 3) Print the final tiled dungeon
-    printBigMap();
+    // 3) Place player, treasure, exit
+    placePlayerInEdgeRoom();
+    placeTreasureInRandomRoom();
+    placeExitFarthestFromPlayer();
 
+    // 4) Start ncurses main loop
+    gameLoopNcurses();
+
+    // If you want a final message outside curses:
+    if (!gameRunning) {
+        if (hasTreasure) {
+            printf("You escaped with the treasure!\n");
+        } else {
+            printf("You quit or left without treasure.\n");
+        }
+    }
     return 0;
 }
