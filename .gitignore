@@ -1,0 +1,11 @@
+# Ignore everything by default
+*
+
+# Allow only .c files
+!*.c
+
+# Allow the readme
+!*README.md
+
+# Allow .gitignore itself
+!.gitignore
