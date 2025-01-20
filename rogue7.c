@@ -216,7 +216,7 @@ void clearBigMap()
 {
     for (int y = 0; y < BIG_SIZE; y++) {
         for (int x = 0; x < BIG_SIZE; x++) {
-            strcpy(bigMap[y][x], " ");
+            strncpy(bigMap[y][x], " ", 4);
         }
     }
 }
@@ -285,27 +285,27 @@ void drawRoom(const TiledRoom *r)
     int bottom = top + r->height - 1;
 
     // Corners
-    strcpy(bigMap[top][left],     "┌");
-    strcpy(bigMap[top][right],    "┐");
-    strcpy(bigMap[bottom][left],  "└");
-    strcpy(bigMap[bottom][right], "┘");
+    strncpy(bigMap[top][left],     "┌", 4);
+    strncpy(bigMap[top][right],    "┐", 4);
+    strncpy(bigMap[bottom][left],  "└", 4);
+    strncpy(bigMap[bottom][right], "┘", 4);
 
     // Top/bottom edges
     for (int x = left + 1; x < right; x++) {
-        strcpy(bigMap[top][x],    "─");
-        strcpy(bigMap[bottom][x], "─");
+        strncpy(bigMap[top][x],    "─", 4);
+        strncpy(bigMap[bottom][x], "─", 4);
     }
 
     // Left/right edges
     for (int y = top + 1; y < bottom; y++) {
-        strcpy(bigMap[y][left],  "│");
-        strcpy(bigMap[y][right], "│");
+        strncpy(bigMap[y][left],  "│", 4);
+        strncpy(bigMap[y][right], "│", 4);
     }
 
     // Fill interior
     for (int y = top + 1; y < bottom; y++) {
         for (int x = left + 1; x < right; x++) {
-            strcpy(bigMap[y][x], ".");
+            strncpy(bigMap[y][x], ".", 4);
         }
     }
 }
@@ -446,8 +446,8 @@ static void placeHorizontalDoors(int gx, int gy)
     int doorY2 = randomWallCoordinate(r2->y, r2->height);
 
     // Mark each door cell with "╬"
-    strcpy(bigMap[doorY1][right1], "╬"); // east wall of R1
-    strcpy(bigMap[doorY2][left2],  "╬"); // west wall of R2
+    strncpy(bigMap[doorY1][right1], "╬", 4); // east wall of R1
+    strncpy(bigMap[doorY2][left2],  "╬", 4); // west wall of R2
 
     // Carve corridor from the space after R1's wall to the space before R2's wall
     carveCorridor(right1 + 1, doorY1, left2 - 1, doorY2, /*isHoriz=*/1);
@@ -476,8 +476,8 @@ static void placeVerticalDoors(int gx, int gy)
     int doorX2 = randomWallCoordinate(r2->x, r2->width);
 
     // Mark each door cell with "╬"
-    strcpy(bigMap[bottom1][doorX1], "╬"); 
-    strcpy(bigMap[top2][doorX2],    "╬");
+    strncpy(bigMap[bottom1][doorX1], "╬", 4); 
+    strncpy(bigMap[top2][doorX2],    "╬", 4);
 
     // Carve corridor from the space after R1's bottom to the space before R2's top
     carveCorridor(doorX1, bottom1 + 1, doorX2, top2 - 1, /*isHoriz=*/0);
@@ -605,7 +605,7 @@ void connectNodesWithCorridors()
                                 int doorY = randomWallCoordinate(r->y, r->height);
 
                                 // place door
-                                strcpy(bigMap[doorY][doorX], "╬"); //
+                                strncpy(bigMap[doorY][doorX], "╬", 4); //
 
                                 // carve from nodeCenterX+1 to doorX-1
                                 carveCorridor(nodeCenterX + 1, nodeCenterY,
@@ -641,7 +641,7 @@ void connectNodesWithCorridors()
                                 int doorX = r->x + r->width - 1;  // right wall of that room
                                 int doorY = randomWallCoordinate(r->y, r->height);
 
-                                strcpy(bigMap[doorY][doorX], "╬");
+                                strncpy(bigMap[doorY][doorX], "╬", 4);
 
                                 // We want the smaller X to be start, so:
                                 int startX = (doorX < nodeCenterX) ? doorX : nodeCenterX;
@@ -679,7 +679,7 @@ void connectNodesWithCorridors()
                                 int doorX = r->x + (r->width / 2);
                                 int doorY = r->y;  // top wall
 
-                                strcpy(bigMap[doorY][doorX], "╬");
+                                strncpy(bigMap[doorY][doorX], "╬", 4);
 
                                 // smaller Y is start, bigger Y is end
                                 int startY = (nodeCenterY < doorY ? nodeCenterY : doorY);
@@ -716,7 +716,7 @@ void connectNodesWithCorridors()
                                 int doorX = r->x + (r->width / 2);
                                 int doorY = r->y + r->height - 1; // bottom wall
 
-                                strcpy(bigMap[doorY][doorX], "╬");
+                                strncpy(bigMap[doorY][doorX], "╬", 4);
 
                                 // top is start, bottom is end
                                 int startY = (doorY < nodeCenterY ? doorY : nodeCenterY);
@@ -994,37 +994,37 @@ static int ncursesPrintTile(int row, int col, const char *cell, const char *next
 {
     // Same logic as your printTile() but using mvaddstr.
     // We'll return how many columns we used.
-    if (strcmp(cell, "╬") == 0 &&
-             (strcmp(nextCell, "▒") == 0)) // "╬▒"
+    if (strncmp(cell, "╬", 4) == 0 &&
+             (strncmp(nextCell, "▒", 4) == 0)) // "╬▒"
     {
         mvaddstr(row, col, "╬▒");
         return 2;
     }
-    else if (strcmp(cell, "▒") == 0 && (strcmp(nextCell, "▒") == 0 || 
-                                        strcmp(nextCell, "╬") == 0)) {
+    else if (strncmp(cell, "▒", 4) == 0 && (strncmp(nextCell, "▒", 4) == 0 || 
+                                        strncmp(nextCell, "╬", 4) == 0)) {
         mvaddstr(row, col, "▒▒");
         return 2;
     }
-    else if (strcmp(cell, "─") == 0) {
+    else if (strncmp(cell, "─", 4) == 0) {
         mvaddstr(row, col, "──");
         return 2;
     }
-    else if (strcmp(cell, "┌") == 0 &&
-             (strcmp(nextCell, "─") == 0 || strcmp(nextCell, "╬") == 0))
+    else if (strncmp(cell, "┌", 4) == 0 &&
+             (strncmp(nextCell, "─", 4) == 0 || strncmp(nextCell, "╬", 4) == 0))
     {
         mvaddstr(row, col, "┌─");
         return 2;
     }
-    else if (strcmp(cell, "└") == 0 &&
-             (strcmp(nextCell, "─") == 0 || strcmp(nextCell, "╬") == 0))
+    else if (strncmp(cell, "└", 4) == 0 &&
+             (strncmp(nextCell, "─", 4) == 0 || strncmp(nextCell, "╬", 4) == 0))
     {
         mvaddstr(row, col, "└─");
         return 2;
     }
-    else if (strcmp(cell, "╬") == 0 &&
-             (strcmp(nextCell, "─") == 0 ||
-              strcmp(nextCell, "┐") == 0 ||
-              strcmp(nextCell, "┘") == 0))
+    else if (strncmp(cell, "╬", 4) == 0 &&
+             (strncmp(nextCell, "─", 4) == 0 ||
+              strncmp(nextCell, "┐", 4) == 0 ||
+              strncmp(nextCell, "┘", 4) == 0))
     {
         mvaddstr(row, col, "╬─");
         return 2;
@@ -1041,13 +1041,13 @@ static int ncursesPrintTile(int row, int col, const char *cell, const char *next
 static int isWalkable(const char *cell)
 {
     // You might refine this as needed
-    if (strcmp(cell, ".") == 0) return 1;
-    if (strcmp(cell, "T") == 0) return 1;
-    if (strcmp(cell, "E") == 0) return 1;
-    if (strcmp(cell, "╬") == 0) return 1;
-    if (strcmp(cell, "▒") == 0) return 1;
+    if (strncmp(cell, ".", 4) == 0) return 1;
+    if (strncmp(cell, "T", 4) == 0) return 1;
+    if (strncmp(cell, "E", 4) == 0) return 1;
+    if (strncmp(cell, "╬", 4) == 0) return 1;
+    if (strncmp(cell, "▒", 4) == 0) return 1;
     // corridor glyphs? Doors? It's up to you:
-    // if (strcmp(cell, "╬") == 0) return 1; // maybe
+    // if (strncmp(cell, "╬") == 0) return 1; // maybe
 
     return 0;
 }
@@ -1143,13 +1143,13 @@ void gameLoopNcurses()
         strcpy(prevTile, bigMap[newY][newX]);
         
         // If that tile is "T" or "E", we might handle it differently:
-        if (strcmp(prevTile, "T") == 0) {
+        if (strncmp(prevTile, "T", 4) == 0) {
             hasTreasure = 1;
             // The treasure is "picked up," so the tile effectively becomes ".".
-            strcpy(prevTile, ".");
+            strncpy(prevTile, ".", 4);
             mvprintw(BIG_SIZE+1, 0, "You got the treasure!");
         }
-        else if (strcmp(prevTile, "E") == 0) {
+        else if (strncmp(prevTile, "E", 4) == 0) {
             if (!hasTreasure) {
                 mvprintw(BIG_SIZE+1, 0, "You found the exit... but no treasure!");
             } else {
